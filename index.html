@@ -268,6 +268,10 @@
     Data is stored locally in this browser only. Export regularly if you want a backup or plan to switch devices.
     <br><br>
     Treadmill and Stairmaster are now tracked separately. Any earlier combined cardio logs are preserved under "Steady cardio (legacy log)" at the bottom of Conditioning.
+    <br><br>
+    If your sets have different reps (e.g. 12,12,12,10,10 as you fatigue), type the full list into REPS instead of one number — sets count and progress tracking work it out automatically.
+    <br><br>
+    Forgot to log something? Open the exercise, change DATE to the day you did it, and log as normal. Anything you type but don't log is kept and flagged at the top of the day until you press Log.
   </div>
 </div>
 
@@ -291,10 +295,10 @@ const PLAN = {
     exercises: [
       { id: "smith-bench", name: "Smith machine bench press", target: "4 x 8–12", unit: "kg", kind: "strength" },
       { id: "chest-press", name: "Chest press machine", target: "3 x 10–12", unit: "kg", kind: "strength" },
-      { id: "shoulder-press", name: "Shoulder press machine", target: "3 x 8–12", unit: "kg / side", start: 20, kind: "strength" },
-      { id: "tricep-pushdown", name: "Cable tricep pushdown", target: "3 x 12–15", unit: "kg", kind: "strength" },
       { id: "incline-db", name: "Incline dumbbell press", target: "3 x 10–12", unit: "kg / dumbbell", kind: "strength" },
-      { id: "sledge-push-day", name: "Sledge push / pull (bonus)", target: "8–10 min", unit: "kg loaded", start: 110, kind: "loadTime" },
+      { id: "tricep-pushdown", name: "Cable tricep pushdown", target: "3 x 12–15", unit: "kg", kind: "strength" },
+      { id: "shoulder-press", name: "Shoulder press machine", target: "3 x 8–12", unit: "kg / side", start: 20, kind: "strength" },
+      { id: "sledge-push-day", name: "Sledge push / pull (bonus)", target: "8–10 min", unit: "kg loaded", start: 110, kind: "loadTime", optional: true },
     ],
   },
   pull: {
@@ -304,17 +308,17 @@ const PLAN = {
       { id: "lat-pulldown", name: "Lat pulldown machine", target: "4 x 8–12", unit: "kg", kind: "strength" },
       { id: "back-rower", name: "Back rower machine", target: "3 x 10–12", unit: "kg / side", start: 20, kind: "strength" },
       { id: "seated-row", name: "Seated cable row", target: "3 x 10–12", unit: "kg", kind: "strength" },
-      { id: "preacher-curl", name: "Preacher curl", target: "3 x 8–12", unit: "kg", start: 30, kind: "strength" },
       { id: "face-pull", name: "Face pulls (cable)", target: "3 x 15", unit: "kg", kind: "strength" },
-      { id: "sledge-pull-day", name: "Sledge push / pull (bonus)", target: "8–10 min", unit: "kg loaded", start: 110, kind: "loadTime" },
+      { id: "preacher-curl", name: "Preacher curl", target: "3 x 8–12", unit: "kg", start: 30, kind: "strength" },
+      { id: "sledge-pull-day", name: "Sledge push / pull (bonus)", target: "8–10 min", unit: "kg loaded", start: 110, kind: "loadTime", optional: true },
     ],
   },
   legs: {
     label: "Legs",
     sub: "Quads / Hamstrings / Calves",
     exercises: [
-      { id: "leg-press", name: "Leg press machine", target: "4 x 10–12", unit: "kg", kind: "strength" },
       { id: "smith-squat", name: "Smith machine squat", target: "3 x 8–10", unit: "kg", kind: "strength" },
+      { id: "leg-press", name: "Leg press machine", target: "4 x 10–12", unit: "kg", kind: "strength" },
       { id: "leg-extension", name: "Leg extension machine", target: "3 x 12–15", unit: "kg", kind: "strength" },
       { id: "leg-curl", name: "Seated / lying leg curl", target: "3 x 12–15", unit: "kg", kind: "strength" },
       { id: "calf-raise", name: "Calf raise machine", target: "3 x 15–20", unit: "kg", kind: "strength" },
@@ -325,12 +329,12 @@ const PLAN = {
     sub: "Sledge / Cardio / Carries",
     exercises: [
       { id: "sledge", name: "Sledge push / pull", target: "15–20 min", unit: "kg loaded", start: 110, kind: "loadTime" },
-      { id: "treadmill", name: "Treadmill", target: "30 min", unit: "", start: 5, kind: "treadmill" },
-      { id: "stairmaster", name: "Stairmaster", target: "30 min", unit: "", start: 11, kind: "stairmaster" },
+      { id: "treadmill", name: "Treadmill", target: "30 min", unit: "", start: 5, kind: "treadmill", group: "cardio" },
+      { id: "stairmaster", name: "Stairmaster", target: "30 min", unit: "", start: 11, kind: "stairmaster", group: "cardio" },
       { id: "farmers-carry", name: "Farmers carry", target: "4 lengths", unit: "kg / hand", start: 16, kind: "strength" },
       { id: "shoulder-press-2", name: "Shoulder press machine", target: "2–3 x", unit: "kg / side", kind: "strength" },
       { id: "preacher-curl-2", name: "Preacher curl", target: "2–3 x", unit: "kg", kind: "strength" },
-      { id: "steady-cardio", name: "Steady cardio (legacy log)", target: "old combined treadmill/stairmaster entries", unit: "min", kind: "legacyCardio" },
+      { id: "steady-cardio", name: "Steady cardio (legacy log)", target: "old combined treadmill/stairmaster entries", unit: "min", kind: "legacyCardio", optional: true },
     ],
   },
 };
@@ -398,10 +402,28 @@ function primaryUnit(kind) {
   return "kg";
 }
 
+// Parses a reps entry that may be a single number ("12") or a comma-separated
+// per-set breakdown ("12,12,12,10,10") when sets vary as fatigue sets in.
+// Returns { array, sum, count } or null if nothing usable was entered.
+function parseReps(repsRaw, setsRaw) {
+  if (repsRaw === undefined || repsRaw === null || repsRaw === "" || repsRaw === "-") return null;
+  const str = String(repsRaw);
+  if (str.includes(",")) {
+    const array = str.split(",").map((v) => parseFloat(v.trim())).filter((v) => !isNaN(v));
+    if (array.length === 0) return null;
+    return { array, sum: array.reduce((a, b) => a + b, 0), count: array.length };
+  }
+  const single = parseFloat(str);
+  if (isNaN(single)) return null;
+  const setsNum = parseFloat(setsRaw);
+  const count = !isNaN(setsNum) ? setsNum : 1;
+  return { array: null, sum: single * count, count };
+}
+
 // Computes a single comparable "work done" number per entry, factoring in
-// weight + sets + reps for strength lifts, weight + minutes for sledge,
-// and speed + duration for cardio machines. This is what trend/progress
-// is actually measured against, not just the raw weight.
+// weight + sets + reps (including varied per-set reps) for strength lifts,
+// weight + minutes for sledge, and speed + duration for cardio machines.
+// This is what trend/progress is actually measured against, not raw weight.
 function computeVolume(ex, h) {
   const num = (v) => {
     const n = parseFloat(v);
@@ -409,12 +431,11 @@ function computeVolume(ex, h) {
   };
   switch (ex.kind) {
     case "strength": {
-      const w = num(h.weight), s = num(h.sets), r = num(h.reps);
-      // Require weight + sets + reps together for a fair comparison —
-      // an incomplete older entry (missing sets/reps) is excluded rather
-      // than falsely compared against a complete one.
-      if (w === null || s === null || r === null) return null;
-      return w * s * r;
+      const w = num(h.weight);
+      if (w === null) return null;
+      const parsed = parseReps(h.reps, h.sets);
+      if (parsed === null) return null;
+      return w * parsed.sum;
     }
     case "loadTime": {
       const w = num(h.weight), m = num(h.minutes);
@@ -438,8 +459,13 @@ function computeVolume(ex, h) {
 function formatEntry(ex, h) {
   const dash = (v) => (v === undefined || v === null || v === "" ? "-" : v);
   switch (ex.kind) {
-    case "strength":
+    case "strength": {
+      const parsed = parseReps(h.reps, h.sets);
+      if (parsed && parsed.array) {
+        return `${dash(h.weight)}kg · ${parsed.count} sets × [${parsed.array.join(",")}] reps`;
+      }
       return `${dash(h.weight)}kg · ${dash(h.sets)} sets × ${dash(h.reps)} reps`;
+    }
     case "loadTime":
       return `${dash(h.weight)}kg · ${dash(h.minutes)} min`;
     case "treadmill":
@@ -458,7 +484,12 @@ function formatLatest(ex, h) {
   const pUnit = primaryUnit(ex.kind);
   const val = h[pKey] !== undefined && h[pKey] !== "" ? h[pKey] : "-";
   let extra = "";
-  if (ex.kind === "strength") extra = ` · ${h.sets || "-"}×${h.reps || "-"}`;
+  if (ex.kind === "strength") {
+    const parsed = parseReps(h.reps, h.sets);
+    extra = parsed
+      ? (parsed.array ? ` · ${parsed.count}×[${parsed.array.join(",")}]` : ` · ${h.sets || "-"}×${h.reps || "-"}`)
+      : ` · ${h.sets || "-"}×${h.reps || "-"}`;
+  }
   if (ex.kind === "loadTime") extra = h.minutes && h.minutes !== "-" ? ` · ${h.minutes}min` : "";
   if (ex.kind === "treadmill") extra = ` · ${h.duration || "-"}min`;
   if (ex.kind === "stairmaster") extra = ` · ${h.duration || "-"}min`;
@@ -487,9 +518,16 @@ function saveEntries() {
   }
 }
 
+// Keep every exercise's history in date order, so a backfilled entry lands in
+// the right place and trend arrows always compare the two most recent sessions.
+function sortByDate(list) {
+  return list.sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
 function addEntry(exerciseId, entry) {
   const list = entries[exerciseId] ? [...entries[exerciseId]] : [];
   list.push(entry);
+  sortByDate(list);
   entries = { ...entries, [exerciseId]: list };
   const ok = saveEntries();
   if (ok) render();
@@ -509,6 +547,7 @@ function updateEntry(exerciseId, index, updatedFields) {
   const list = entries[exerciseId] ? [...entries[exerciseId]] : [];
   if (!list[index]) return false;
   list[index] = { ...list[index], ...updatedFields };
+  sortByDate(list);
   entries = { ...entries, [exerciseId]: list };
   const ok = saveEntries();
   if (ok) render();
@@ -525,6 +564,114 @@ function sunCityCountdown() {
 
 function formatDate(d) {
   return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Local calendar day as YYYY-MM-DD (used for the date picker and for grouping
+// entries into "sessions"). Uses the device's local time, not UTC.
+function dateKey(d) {
+  const dt = new Date(d);
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${dt.getFullYear()}-${m}-${day}`;
+}
+
+// Turn a picked YYYY-MM-DD into a stored timestamp. Noon local time avoids any
+// timezone edge cases flipping the entry onto the wrong day.
+function isoFromDateKey(key) {
+  return new Date(key + "T12:00:00").toISOString();
+}
+
+// Brief confirmation message. Needed because saving re-renders the page and closes the
+// card, so a message inside the card would vanish immediately.
+let toastTimer = null;
+function showToast(message) {
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.style.cssText =
+      "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:90%;" +
+      "background:#1C2024;color:#EDEDED;border:1px solid #2A2F34;border-left:3px solid #7FA88C;" +
+      "border-radius:6px;padding:10px 16px;font-size:12px;font-family:'JetBrains Mono',monospace;" +
+      "z-index:1000;box-shadow:0 4px 16px rgba(0,0,0,0.4);transition:opacity 0.2s;";
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.style.opacity = "1";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.opacity = "0"; }, 2200);
+}
+
+// ---- drafts: half-entered values survive tab switches and reloads ----
+const DRAFT_KEY = "training-log-drafts-v1";
+const DISMISS_KEY = "training-log-dismissed-v1";
+let drafts = {};
+let dismissed = {};
+
+function loadJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function saveJSON(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error("Failed to save " + key, e);
+  }
+}
+
+// A field counts as "typed" if it has a value that differs from the pre-filled default.
+function defaultFor(ex, key) {
+  if ((key === "weight" || key === "speed") && ex.start) return String(ex.start);
+  return "";
+}
+
+function hasPendingDraft(ex) {
+  const d = drafts[ex.id];
+  if (!d) return false;
+  return fieldsFor(ex.kind).some((f) => {
+    const v = d[f.key];
+    return v !== undefined && v !== "" && v !== defaultFor(ex, f.key);
+  });
+}
+
+function pendingDraftNames() {
+  return Object.keys(drafts)
+    .filter((id) => ALL_EXERCISES[id] && hasPendingDraft(ALL_EXERCISES[id]))
+    .map((id) => ALL_EXERCISES[id].name);
+}
+
+// ---- missed-exercise check ----
+// For a given day tab, find the most recent session date (any exercise from
+// that day logged) and report which required exercises have no entry on it.
+function findMissedExercises(dayKey) {
+  const day = PLAN[dayKey];
+  const dates = new Set();
+  day.exercises.forEach((ex) => (entries[ex.id] || []).forEach((h) => dates.add(dateKey(h.date))));
+  if (dates.size === 0) return null;
+  const latestDate = [...dates].sort().pop();
+
+  // Only nag about reasonably recent sessions.
+  const ageDays = (new Date(dateKey(new Date()) + "T12:00:00") - new Date(latestDate + "T12:00:00")) / 86400000;
+  if (ageDays > 14) return null;
+
+  const loggedOn = (ex) => (entries[ex.id] || []).some((h) => dateKey(h.date) === latestDate);
+  const groupDone = {};
+  day.exercises.forEach((ex) => { if (ex.group && loggedOn(ex)) groupDone[ex.group] = true; });
+
+  const missing = day.exercises.filter((ex) => {
+    if (ex.optional) return false;
+    if (ex.group && groupDone[ex.group]) return false;
+    return !loggedOn(ex);
+  });
+  if (missing.length === 0) return null;
+  if (dismissed[dayKey + "|" + latestDate]) return null;
+  return { date: latestDate, missing, dayKey };
 }
 
 // ---- rendering ----
@@ -556,7 +703,94 @@ function render() {
 
   const list = document.getElementById("exerciseList");
   list.innerHTML = "";
+
+  const banners = renderBanners(activeDay);
+  if (banners) list.appendChild(banners);
+
   day.exercises.forEach((ex) => list.appendChild(renderExerciseCard(ex)));
+
+  // If a banner chip was tapped, scroll to and highlight that exercise.
+  if (jumpToId) {
+    const target = document.querySelector(`[data-ex-id="${jumpToId}"]`);
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+    jumpToId = null;
+  }
+}
+
+let jumpToId = null; // exercise to auto-open after the next render
+
+function bannerBox(color) {
+  const box = document.createElement("div");
+  box.style.marginBottom = "12px";
+  box.style.padding = "12px 14px";
+  box.style.background = "var(--surface)";
+  box.style.border = "1px solid " + color;
+  box.style.borderLeft = "3px solid " + color;
+  box.style.borderRadius = "6px";
+  box.style.fontSize = "12px";
+  box.style.lineHeight = "1.5";
+  box.style.color = "var(--muted)";
+  return box;
+}
+
+function chipFor(ex, label) {
+  const chip = document.createElement("button");
+  chip.textContent = label;
+  chip.style.cssText =
+    "background:transparent;border:1px solid var(--line);color:var(--text);border-radius:12px;" +
+    "font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 10px;margin:4px 6px 0 0;cursor:pointer;";
+  chip.onclick = () => { jumpToId = ex.id; render(); };
+  return chip;
+}
+
+// Banners shown at the top of a day: unlogged drafts + exercises missing from the last session.
+function renderBanners(dayKey) {
+  const wrap = document.createElement("div");
+  let any = false;
+
+  // 1) Typed-but-never-logged drafts for this day's exercises
+  const pendingHere = PLAN[dayKey].exercises.filter((ex) => hasPendingDraft(ex));
+  if (pendingHere.length > 0) {
+    const box = bannerBox("var(--signal)");
+    box.innerHTML = `<div style="color:var(--text);font-weight:500;">Typed but not logged yet</div>
+      <div>You entered numbers for these but didn't press Log — tap to finish:</div>`;
+    pendingHere.forEach((ex) => box.appendChild(chipFor(ex, ex.name)));
+    wrap.appendChild(box);
+    any = true;
+  }
+
+  // 2) Exercises missing from the most recent session of this day
+  const missed = findMissedExercises(dayKey);
+  if (missed) {
+    const box = bannerBox("var(--steel)");
+    box.innerHTML = `<div style="color:var(--text);font-weight:500;">Missing from your ${formatDate(missed.date + "T12:00:00")} session</div>
+      <div>Nothing logged that day for these. If you did them, tap one and pick that date to backfill:</div>`;
+    const seenGroups = {};
+    missed.missing.forEach((ex) => {
+      if (ex.group) {
+        if (seenGroups[ex.group]) return;
+        seenGroups[ex.group] = true;
+        box.appendChild(chipFor(ex, "Treadmill / Stairmaster"));
+      } else {
+        box.appendChild(chipFor(ex, ex.name));
+      }
+    });
+    const dismissBtn = document.createElement("button");
+    dismissBtn.textContent = "Skipped on purpose — dismiss";
+    dismissBtn.style.cssText =
+      "display:block;margin-top:10px;background:transparent;border:none;color:var(--steel);" +
+      "font-size:11px;text-decoration:underline;cursor:pointer;padding:0;";
+    dismissBtn.onclick = () => {
+      dismissed[missed.dayKey + "|" + missed.date] = true;
+      saveJSON(DISMISS_KEY, dismissed);
+      render();
+    };
+    box.appendChild(dismissBtn);
+    wrap.appendChild(box);
+    any = true;
+  }
+
+  return any ? wrap : null;
 }
 
 function renderExerciseCard(ex) {
@@ -566,6 +800,10 @@ function renderExerciseCard(ex) {
 
   const card = document.createElement("div");
   card.className = "exercise-card";
+  card.dataset.exId = ex.id;
+
+  const pending = hasPendingDraft(ex);
+  const shouldOpen = pending || jumpToId === ex.id;
 
   const header = document.createElement("div");
   header.className = "exercise-header";
@@ -576,6 +814,7 @@ function renderExerciseCard(ex) {
   nameBlock.innerHTML = `
     <div class="exercise-name">${ex.name}</div>
     <div class="exercise-target">${ex.target}${ex.unit ? " · " + ex.unit : ""}</div>
+    ${pending ? `<div style="font-size:11px;color:var(--signal);margin-top:3px;font-family:'JetBrains Mono',monospace;">● typed, not logged yet</div>` : ""}
   `;
   header.appendChild(nameBlock);
 
@@ -605,18 +844,37 @@ function renderExerciseCard(ex) {
     rightBlock.innerHTML = `<div class="no-data">no data</div>`;
   }
   const chevron = document.createElement("div");
-  chevron.className = "chevron";
+  chevron.className = "chevron" + (shouldOpen ? " open" : "");
   chevron.textContent = "›";
   rightBlock.appendChild(chevron);
   header.appendChild(rightBlock);
 
   const panel = document.createElement("div");
-  panel.className = "log-panel";
+  panel.className = "log-panel" + (shouldOpen ? " open" : "");
 
   header.onclick = () => {
     const isOpen = panel.classList.toggle("open");
     chevron.classList.toggle("open", isOpen);
   };
+
+  const draft = drafts[ex.id] || {};
+  const todayKey = dateKey(new Date());
+
+  // Date picker: defaults to today; pick an earlier day to backfill a forgotten log.
+  const dateRow = document.createElement("div");
+  dateRow.className = "input-group";
+  dateRow.style.marginBottom = "10px";
+  dateRow.innerHTML = `<label class="input-label">DATE (change to backfill a missed day)</label>`;
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.max = todayKey;
+  dateInput.value = draft._date || todayKey;
+  dateInput.oninput = () => {
+    drafts[ex.id] = { ...(drafts[ex.id] || {}), _date: dateInput.value };
+    saveJSON(DRAFT_KEY, drafts);
+  };
+  dateRow.appendChild(dateInput);
+  panel.appendChild(dateRow);
 
   const inputRow = document.createElement("div");
   inputRow.className = "input-row";
@@ -629,8 +887,19 @@ function renderExerciseCard(ex) {
     const input = document.createElement("input");
     input.type = "number";
     input.inputMode = "decimal";
-    if (f.key === "weight" && ex.start) input.value = String(ex.start);
-    if (f.key === "speed" && ex.start) input.value = String(ex.start);
+    input.value = defaultFor(ex, f.key);
+    if (f.key === "reps") {
+      input.type = "text";
+      input.inputMode = "text";
+      input.placeholder = "10 or 12,12,10";
+    }
+    // Restore anything typed earlier but never logged
+    if (draft[f.key] !== undefined) input.value = draft[f.key];
+    // Autosave as you type, so nothing is lost if you switch tabs or the page reloads
+    input.oninput = () => {
+      drafts[ex.id] = { ...(drafts[ex.id] || {}), [f.key]: input.value };
+      saveJSON(DRAFT_KEY, drafts);
+    };
     group.appendChild(input);
     inputRow.appendChild(group);
     fieldInputs[f.key] = input;
@@ -643,23 +912,33 @@ function renderExerciseCard(ex) {
 
   panel.appendChild(inputRow);
 
-  const savedMsg = document.createElement("div");
-  savedMsg.className = "saved-msg";
-  savedMsg.style.display = "none";
-  savedMsg.textContent = "Saved ✓";
-  panel.appendChild(savedMsg);
-
   logBtn.onclick = () => {
     const pKey = primaryKey(ex.kind);
-    if (!fieldInputs[pKey] || !fieldInputs[pKey].value) return; // primary field required
-    const entry = { date: new Date().toISOString() };
+    if (!fieldInputs[pKey] || !fieldInputs[pKey].value) {
+      showToast("Enter " + fields[0].label + " first");
+      return; // primary field required
+    }
+    const pickedKey = dateInput.value || todayKey;
+    const entry = {
+      // Today keeps the real timestamp; a backfilled day is stored at noon of that day
+      date: pickedKey === todayKey ? new Date().toISOString() : isoFromDateKey(pickedKey),
+    };
     fields.forEach((f) => {
       entry[f.key] = fieldInputs[f.key].value || "-";
     });
+
+    // Clear the draft BEFORE saving: addEntry re-renders, which would otherwise restore it.
+    const savedDraft = drafts[ex.id];
+    delete drafts[ex.id];
+    saveJSON(DRAFT_KEY, drafts);
+
     const ok = addEntry(ex.id, entry);
     if (ok) {
-      savedMsg.style.display = "block";
-      setTimeout(() => { savedMsg.style.display = "none"; }, 1200);
+      showToast("Saved ✓ " + ex.name + (pickedKey === todayKey ? "" : " · " + formatDate(entry.date)));
+    } else {
+      // Save failed: put the draft back so nothing is lost
+      if (savedDraft) { drafts[ex.id] = savedDraft; saveJSON(DRAFT_KEY, drafts); }
+      showToast("Couldn't save — your numbers are still here, try again");
     }
   };
 
@@ -723,6 +1002,18 @@ function renderHistoryRow(ex, h, i, fields) {
   editPanel.className = "input-row";
 
   const editInputs = {};
+
+  const editDateGroup = document.createElement("div");
+  editDateGroup.className = "input-group";
+  editDateGroup.style.flex = "1 1 100%";
+  editDateGroup.innerHTML = `<label class="input-label">DATE</label>`;
+  const editDateInput = document.createElement("input");
+  editDateInput.type = "date";
+  editDateInput.max = dateKey(new Date());
+  editDateInput.value = dateKey(h.date);
+  editDateGroup.appendChild(editDateInput);
+  editPanel.appendChild(editDateGroup);
+
   fields.forEach((f) => {
     const group = document.createElement("div");
     group.className = "input-group";
@@ -730,6 +1021,11 @@ function renderHistoryRow(ex, h, i, fields) {
     const input = document.createElement("input");
     input.type = "number";
     input.inputMode = "decimal";
+    if (f.key === "reps") {
+      input.type = "text";
+      input.inputMode = "text";
+      input.placeholder = "10 or 12,12,10";
+    }
     input.value = h[f.key] && h[f.key] !== "-" ? h[f.key] : "";
     group.appendChild(input);
     editPanel.appendChild(group);
@@ -744,7 +1040,12 @@ function renderHistoryRow(ex, h, i, fields) {
     fields.forEach((f) => {
       updated[f.key] = editInputs[f.key].value || "-";
     });
+    // Only rewrite the date if it was actually changed, so the original time is kept otherwise
+    if (editDateInput.value && editDateInput.value !== dateKey(h.date)) {
+      updated.date = isoFromDateKey(editDateInput.value);
+    }
     updateEntry(ex.id, i, updated);
+    showToast("Saved ✓");
   };
   editPanel.appendChild(saveBtn);
 
@@ -909,6 +1210,20 @@ document.getElementById("importBtn").onclick = () => {
 
 // ---- init ----
 loadEntries();
+drafts = loadJSON(DRAFT_KEY, {});
+dismissed = loadJSON(DISMISS_KEY, {});
+
+// Make sure every stored history is in date order (older entries predate sorting)
+Object.keys(entries).forEach((id) => { if (Array.isArray(entries[id])) sortByDate(entries[id]); });
+
+// Warn before closing/reloading the page if numbers were typed but never logged
+window.addEventListener("beforeunload", (e) => {
+  if (pendingDraftNames().length > 0) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 render();
 </script>
 </body>
